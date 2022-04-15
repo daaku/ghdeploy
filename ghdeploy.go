@@ -49,6 +49,7 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -106,7 +107,8 @@ func ReleasesDir(dir string) Option {
 	}
 }
 
-// CurrentReleaseTag is the current release tag.
+// CurrentReleaseTag is the current release tag. The default is found
+// using the BuildInfo of the current binary.
 func CurrentReleaseTag(tag string) Option {
 	return func(d *Deployer) {
 		d.currentReleaseTag = tag
@@ -262,6 +264,24 @@ func New(options ...Option) (*Deployer, error) {
 			return nil, errors.WithStack(err)
 		}
 		d.releasesDir = filepath.Join(home, ".local", d.serviceName)
+	}
+	if d.currentReleaseTag == "" {
+		if bi, ok := debug.ReadBuildInfo(); ok {
+			setting := func(key string) string {
+				for _, bs := range bi.Settings {
+					if bs.Key == key {
+						return bs.Value
+					}
+				}
+				return ""
+			}
+			if rev := setting("vcs.revision"); rev != "" {
+				d.currentReleaseTag = rev
+				if modified := setting("vcs.modified"); modified == "true" {
+					d.currentReleaseTag += " (modified)"
+				}
+			}
+		}
 	}
 	if d.targets.blue == 0 {
 		d.targets.blue = 8000
