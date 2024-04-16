@@ -89,8 +89,9 @@ type Deployer struct {
 // Option configures the Deployer.
 type Option func(*Deployer)
 
-// SysSystemdServiceName configures the base name of the unit. It is expected
-// this will be a template unit. See package documentation for more.
+// SysSystemdServiceName configures the base name of the unit. Defaults to
+// GithubRepoName. It is expected this will be a template unit. See package
+// documentation for more.
 func SystemdServiceName(name string) Option {
 	return func(d *Deployer) {
 		d.serviceName = name
@@ -230,9 +231,6 @@ func New(options ...Option) (*Deployer, error) {
 	}
 
 	// required
-	if d.serviceName == "" {
-		return nil, errors.New("deploy: SystemdServiceName option must be provided")
-	}
 	if d.targets.current == 0 {
 		return nil, errors.New("deploy: CurrentPort option must be provided")
 	}
@@ -256,6 +254,9 @@ func New(options ...Option) (*Deployer, error) {
 	}
 
 	// defaults
+	if d.serviceName == "" {
+		d.serviceName = d.github.repo
+	}
 	if d.releasesDir == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
