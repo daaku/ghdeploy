@@ -559,7 +559,7 @@ func (d *Deployer) deploy(releaseTag string) error {
 	if err := d.startTarget(d.targets.next); err != nil {
 		return err
 	}
-	log.Printf("Started new release %s, shutting myself down\n", releaseTag)
+	log.Printf("Started new release %s\n", releaseTag)
 	return nil
 }
 
