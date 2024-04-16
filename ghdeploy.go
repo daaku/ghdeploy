@@ -35,6 +35,7 @@ import (
 	"archive/tar"
 	"crypto/hmac"
 	"crypto/sha1"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	perrors "errors"
@@ -49,6 +50,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/go-mail/mail"
@@ -539,6 +541,10 @@ type compareResponse struct {
 	} `json:"commits"`
 }
 
+//go:embed release_email.html
+var releaseEmailTemplate string
+var releaseEmail = template.Must(template.New("release_email").Parse(releaseEmailTemplate))
+
 func (d *Deployer) releaseEmail(releaseTag string) (string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/compare/%s...%s",
 		d.github.account, d.github.repo, d.currentReleaseTag, releaseTag)
@@ -546,7 +552,18 @@ func (d *Deployer) releaseEmail(releaseTag string) (string, error) {
 	if err := d.githubGet(url, &result); err != nil {
 		return "", err
 	}
-	return d.renderReleaseEmail(releaseTag, result), nil
+	ctx := struct {
+		CurrentReleaseTag string
+		Compare           compareResponse
+	}{
+		CurrentReleaseTag: d.currentReleaseTag,
+		Compare:           result,
+	}
+	var b strings.Builder
+	if err := releaseEmail.Execute(&b, ctx); err != nil {
+		return "", errors.WithMessage(err, "deploy: in rendering release email")
+	}
+	return b.String(), nil
 }
 
 func (d *Deployer) deployAndEmail(releaseTag string) {

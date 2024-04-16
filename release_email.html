@@ -1,0 +1,15 @@
+<div>
+  <strong>Changes in this release:</strong>
+</div>
+<table>
+  <tbody>
+    {{range .Compare.Commits}}
+    <tr><a href="{{.URL}}">{%s commit.Commit.Message %}</a></tr>
+    {{end}}
+  </tbody>
+</table>
+<p style="margin-top:2em">
+  The previous build was <strong>{{.CurrentReleaseTag}}</strong>.
+  <br>
+  <a href="{{.Compare.URL}}">Compare the releases on Github.</a>
+</p>
