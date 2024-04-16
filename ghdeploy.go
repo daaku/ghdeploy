@@ -690,6 +690,8 @@ func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if event.Action != "published" {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprintf(w, "deploy: unexpected action: %v", event.Action)
 		return
 	}
 	go d.deployAndEmail(event.Release.TagName)
