@@ -4,7 +4,7 @@
 <table>
   <tbody>
     {{range .Compare.Commits}}
-    <tr><a href="{{.URL}}">{%s commit.Commit.Message %}</a></tr>
+    <tr><a href="{{.URL}}">{{.Commit.Message}}</a></tr>
     {{end}}
   </tbody>
 </table>

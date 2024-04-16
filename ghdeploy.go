@@ -532,7 +532,6 @@ func (d *Deployer) deploy(releaseTag string) error {
 
 type compareResponse struct {
 	URL     string `json:"html_url"`
-	AheadBy int    `json:"ahead_by"`
 	Commits []struct {
 		Commit struct {
 			Message string `json:"message"`
@@ -554,10 +553,10 @@ func (d *Deployer) releaseEmail(releaseTag string) (string, error) {
 	}
 	ctx := struct {
 		CurrentReleaseTag string
-		Compare           compareResponse
+		Compare           *compareResponse
 	}{
 		CurrentReleaseTag: d.currentReleaseTag,
-		Compare:           result,
+		Compare:           &result,
 	}
 	var b strings.Builder
 	if err := releaseEmail.Execute(&b, ctx); err != nil {
