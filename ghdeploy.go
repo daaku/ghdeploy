@@ -25,8 +25,6 @@
 // • Configure your Github webook and the deployer with the hook secret.
 package ghdeploy
 
-// TODO: dont reuse target dir, make new one and atomically replace old one
-// TODO: create release tag file in installTarget
 // TODO: auto discover current release from systemd + installed target
 // TODO: on failure collect log from startup attempt and include in email
 // TODO: include compare url in failure email
@@ -502,6 +500,9 @@ func (d *Deployer) installTarget(target int, releaseTag string) error {
 				return errors.WithStack(err)
 			}
 		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "release"), []byte(releaseTag), 0o655); err != nil {
+		return errors.WithStack(err)
 	}
 	return nil
 }
