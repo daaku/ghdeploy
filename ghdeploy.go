@@ -232,7 +232,7 @@ func New(options ...Option) (*Deployer, error) {
 
 	// required
 	if d.targets.current == 0 {
-		return nil, errors.New("deploy: CurrentPort option must be provided")
+		return nil, errors.New("deploy: PortCurrent option must be provided")
 	}
 	if d.github.token == "" {
 		return nil, errors.New("deploy: GithubToken option must be provided")
