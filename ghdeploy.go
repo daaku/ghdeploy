@@ -678,7 +678,6 @@ func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_, _ = w.Write(ok)
 	var event struct {
 		Action  string `json:"action"`
 		Release struct {
@@ -694,12 +693,12 @@ func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go d.deployAndEmail(event.Release.TagName)
+	_, _ = w.Write(ok)
 }
 
 func (d *Deployer) direct(w http.ResponseWriter, r *http.Request) {
+	go d.deployAndEmail(r.FormValue("release_tag"))
 	_, _ = w.Write(ok)
-	releaseTag := r.FormValue("release_tag")
-	go d.deployAndEmail(releaseTag)
 }
 
 func (d *Deployer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
