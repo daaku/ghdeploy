@@ -51,7 +51,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-chi/chi"
 	"github.com/go-mail/mail"
 	"github.com/pkg/errors"
 )
@@ -655,9 +654,10 @@ func (d *Deployer) direct(w http.ResponseWriter, r *http.Request) {
 	go d.deployAndEmail(releaseTag)
 }
 
-func (d *Deployer) Router(r chi.Router) {
-	if d.directHandler {
-		r.Post("/direct/", http.HandlerFunc(d.direct))
+func (d *Deployer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/direct/") {
+		d.direct(w, r)
+		return
 	}
-	r.Mount("/", http.HandlerFunc(d.hook))
+	d.hook(w, r)
 }
