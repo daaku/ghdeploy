@@ -4,8 +4,7 @@
 // It is meant for single instance web servers, and not useful if you're
 // running a fleet of web servers.
 //
-//
-// Requirements
+// # Requirements
 //
 // • You are using a blue/green deployment strategy. This essentially means you
 // will have some server in the front (haproxy, caddy, nginx etc) that will
@@ -17,8 +16,7 @@
 // • You are using systemd units to run your service. This should be a template
 // unit, so the same unit is used for the blue and green instances.
 //
-//
-// Procedure
+// # Procedure
 //
 // • See example repo for how this should be setup.
 //
@@ -42,7 +40,6 @@ import (
 	perrors "errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -217,7 +214,7 @@ func EmailTo(addr string) Option {
 // This can be handy to quickly deploy a different release, and can be invoked
 // as such:
 //
-//     curl http://myapp.com/webhook/github/direct/ -F release_tag=v42
+//	curl http://myapp.com/webhook/github/direct/ -F release_tag=v42
 func EnableDirectHandler(enable bool) Option {
 	return func(d *Deployer) {
 		d.directHandler = enable
@@ -601,7 +598,7 @@ func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	jb, err := ioutil.ReadAll(r.Body)
+	jb, err := io.ReadAll(r.Body)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		io.WriteString(w, "deploy: error reading json payload")
