@@ -25,7 +25,6 @@
 // • Configure your Github webook and the deployer with the hook secret.
 package ghdeploy
 
-// TODO: auto discover current release from systemd + installed target
 // TODO: on failure collect log from startup attempt and include in email
 // TODO: include compare url in failure email
 // TODO: include github action build url in email
@@ -33,6 +32,7 @@ package ghdeploy
 
 import (
 	"archive/tar"
+	"bytes"
 	"crypto/hmac"
 	"crypto/sha1"
 	_ "embed"
@@ -271,19 +271,24 @@ func New(options ...Option) (*Deployer, error) {
 		d.targets.current = portCurrent
 	}
 	if d.currentReleaseTag == "" {
-		if bi, ok := debug.ReadBuildInfo(); ok {
-			setting := func(key string) string {
-				for _, bs := range bi.Settings {
-					if bs.Key == key {
-						return bs.Value
+		tag, err := os.ReadFile(filepath.Join(d.path(d.targets.current), "release"))
+		if err == nil && len(tag) > 0 {
+			d.currentReleaseTag = string(bytes.TrimSpace(tag))
+		} else {
+			if bi, ok := debug.ReadBuildInfo(); ok {
+				setting := func(key string) string {
+					for _, bs := range bi.Settings {
+						if bs.Key == key {
+							return bs.Value
+						}
 					}
+					return ""
 				}
-				return ""
-			}
-			if rev := setting("vcs.revision"); rev != "" {
-				d.currentReleaseTag = rev
-				if modified := setting("vcs.modified"); modified == "true" {
-					d.currentReleaseTag += " (modified)"
+				if rev := setting("vcs.revision"); rev != "" {
+					d.currentReleaseTag = rev
+					if modified := setting("vcs.modified"); modified == "true" {
+						d.currentReleaseTag += " (modified)"
+					}
 				}
 			}
 		}
