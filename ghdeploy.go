@@ -23,13 +23,15 @@
 // • Configure your Github webook to hit the endpoint you have configured.
 //
 // • Configure your Github webook and the deployer with the hook secret.
-//
-// TODO: on failure collect log from startup attempt and include in email
-//
-// TODO: include compare url in failure email
-//
-// TODO: include github action build url in email
 package ghdeploy
+
+// TODO: dont reuse target dir, make new one and atomically replace old one
+// TODO: create release tag file in installTarget
+// TODO: auto discover current release from systemd + installed target
+// TODO: on failure collect log from startup attempt and include in email
+// TODO: include compare url in failure email
+// TODO: include github action build url in email
+// TODO: initial deployment
 
 import (
 	"archive/tar"
