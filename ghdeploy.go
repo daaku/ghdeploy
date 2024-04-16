@@ -48,6 +48,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"text/template"
@@ -150,7 +151,8 @@ func PortGreen(port int) Option {
 	}
 }
 
-// PortCurrent is the port the current server process is listening on.
+// PortCurrent is the port the current server process is listening on. Default
+// is determined based on running systemd units.
 func PortCurrent(port int) Option {
 	return func(d *Deployer) {
 		d.targets.current = port
@@ -231,9 +233,6 @@ func New(options ...Option) (*Deployer, error) {
 	}
 
 	// required
-	if d.targets.current == 0 {
-		return nil, errors.New("deploy: PortCurrent option must be provided")
-	}
 	if d.github.token == "" {
 		return nil, errors.New("deploy: GithubToken option must be provided")
 	}
@@ -263,6 +262,13 @@ func New(options ...Option) (*Deployer, error) {
 			return nil, errors.WithStack(err)
 		}
 		d.releasesDir = filepath.Join(home, ".local", d.serviceName)
+	}
+	if d.targets.current == 0 {
+		portCurrent, err := d.guessPortCurrent()
+		if err != nil {
+			return nil, err
+		}
+		d.targets.current = portCurrent
 	}
 	if d.currentReleaseTag == "" {
 		if bi, ok := debug.ReadBuildInfo(); ok {
@@ -318,6 +324,29 @@ func (d *Deployer) path(target int) string {
 
 func (d *Deployer) service(target int) string {
 	return fmt.Sprintf("%s@%d.service", d.serviceName, target)
+}
+
+func (d *Deployer) guessPortCurrent() (int, error) {
+	out, err := exec.Command("systemctl", "--user", "list-units", d.serviceName+"@*", "--output", "json").
+		CombinedOutput()
+	if err != nil {
+		return 0, errors.Errorf("deploy: %s: %s", err, out)
+	}
+	var units []struct {
+		Unit string `json:"unit"`
+	}
+	if err := json.Unmarshal(out, &units); err != nil {
+		return 0, errors.Errorf("deploy: error listing units: %s: %s", err, out)
+	}
+	if len(units) > 0 {
+		_, portStr, _ := strings.Cut(strings.TrimSuffix(units[0].Unit, ".service"), "@")
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return 0, errors.Errorf("deploy: unexpected template unit name: %s", units[0].Unit)
+		}
+		return port, nil
+	}
+	return 0, errors.Errorf("deploy: no active units for %s to guess current port", d.serviceName)
 }
 
 func (d *Deployer) systemctl(target int, op string) error {
