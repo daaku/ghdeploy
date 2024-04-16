@@ -703,7 +703,7 @@ func (d *Deployer) direct(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Deployer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if strings.HasSuffix(r.URL.Path, "/direct/") {
+	if d.directHandler && strings.HasSuffix(r.URL.Path, "/direct/") {
 		d.direct(w, r)
 		return
 	}
