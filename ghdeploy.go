@@ -25,7 +25,6 @@
 // • Configure your Github webook and the deployer with the hook secret.
 package ghdeploy
 
-// TODO: remove healthz requirement by default
 // TODO: on failure collect log from startup attempt and include in email
 // TODO: include compare url in failure email
 // TODO: include github action build url in email
@@ -44,6 +43,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -116,14 +116,16 @@ func ReleasesDir(dir string) Option {
 	}
 }
 
-// HealthCheckPath configures the health check path. The default is /healthz/.
+// HealthCheckPath configures the health check path. The default is /.
 func HealthCheckPath(path string) Option {
 	return func(d *Deployer) {
 		d.healthCheck.path = path
 	}
 }
 
-// HealthCheckProtocol must specific http or https. The default is http.
+// HealthCheckProtocol must be one of tcp, http or https. The default is tcp,
+// which simply checks for a successful connection. HTTP checks for a 200
+// response on the configured path.
 func HealthCheckProtocol(protocol string) Option {
 	return func(d *Deployer) {
 		d.healthCheck.protocol = protocol
@@ -263,10 +265,10 @@ func New(options ...Option) (*Deployer, error) {
 		d.targets.green = 8001
 	}
 	if d.healthCheck.path == "" {
-		d.healthCheck.path = "/healthz/"
+		d.healthCheck.path = "/"
 	}
 	if d.healthCheck.protocol == "" {
-		d.healthCheck.protocol = "http"
+		d.healthCheck.protocol = "tcp"
 	}
 	if d.healthCheck.timeout == 0 {
 		d.healthCheck.timeout = time.Second * 30
@@ -341,20 +343,31 @@ func (d *Deployer) systemctl(target int, op string) error {
 func (d *Deployer) isHealthy(target int, timeout time.Duration) error {
 	end := time.Now().Add(timeout)
 	for {
-		res, err := http.Get(d.url(target, d.healthCheck.path))
-		if res != nil {
-			res.Body.Close()
-		}
-		if err == nil && res.StatusCode == http.StatusOK {
-			return nil
+		var checkErr error
+		if d.healthCheck.protocol == "tcp" {
+			conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", target), time.Millisecond*100)
+			if err == nil {
+				conn.Close()
+				return nil
+			}
+			checkErr = err
+		} else {
+			res, err := http.Get(d.url(target, d.healthCheck.path))
+			if res != nil {
+				res.Body.Close()
+			}
+			if err == nil && res.StatusCode == http.StatusOK {
+				return nil
+			}
+			checkErr = err
 		}
 
 		// ignore connect errors, bubble anything else
-		if err != nil {
+		if checkErr != nil {
 			var scErr *os.SyscallError
-			if !perrors.As(err, &scErr) || scErr.Syscall != "connect" {
+			if !perrors.As(checkErr, &scErr) || scErr.Syscall != "connect" {
 				return errors.Errorf(
-					"deploy: unknown error for service on port %d: %s", target, err)
+					"deploy: unknown error for service on port %d: %s", target, checkErr)
 			}
 		}
 
