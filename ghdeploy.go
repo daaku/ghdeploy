@@ -25,7 +25,7 @@
 // • Configure your Github webook and the deployer with the hook secret.
 package ghdeploy
 
-// TODO: make current/next dynamic
+// TODO: dont error on unknown webhooks
 // TODO: on failure collect log from startup attempt and include in email
 // TODO: include compare url in failure email
 // TODO: include github action build url in email
@@ -49,7 +49,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,19 +59,27 @@ import (
 	"github.com/pkg/errors"
 )
 
+type session struct {
+	target struct {
+		current, next int
+	}
+	tag struct {
+		current, next string
+	}
+}
+
 // Deployer handles deployment of new releases.
 type Deployer struct {
-	serviceName       string
-	releasesDir       string
-	currentReleaseTag string
-	directHandler     bool
-	healthCheck       struct {
+	serviceName   string
+	releasesDir   string
+	directHandler bool
+	healthCheck   struct {
 		protocol string
 		path     string
 		timeout  time.Duration
 	}
 	targets struct {
-		blue, green, current, next int
+		blue, green int
 	}
 	github struct {
 		token      string
@@ -109,14 +116,6 @@ func ReleasesDir(dir string) Option {
 	}
 }
 
-// CurrentReleaseTag is the current release tag. The default is found
-// using the BuildInfo of the current binary.
-func CurrentReleaseTag(tag string) Option {
-	return func(d *Deployer) {
-		d.currentReleaseTag = tag
-	}
-}
-
 // HealthCheckPath configures the health check path. The default is /healthz/.
 func HealthCheckPath(path string) Option {
 	return func(d *Deployer) {
@@ -150,14 +149,6 @@ func PortBlue(port int) Option {
 func PortGreen(port int) Option {
 	return func(d *Deployer) {
 		d.targets.green = port
-	}
-}
-
-// PortCurrent is the port the current server process is listening on. Default
-// is determined based on running systemd units.
-func PortCurrent(port int) Option {
-	return func(d *Deployer) {
-		d.targets.current = port
 	}
 }
 
@@ -265,36 +256,6 @@ func New(options ...Option) (*Deployer, error) {
 		}
 		d.releasesDir = filepath.Join(home, ".local", d.serviceName)
 	}
-	if d.targets.current == 0 {
-		portCurrent, err := d.guessPortCurrent()
-		if err != nil {
-			return nil, err
-		}
-		d.targets.current = portCurrent
-	}
-	if d.currentReleaseTag == "" {
-		tag, err := os.ReadFile(filepath.Join(d.path(d.targets.current), "release"))
-		if err == nil && len(tag) > 0 {
-			d.currentReleaseTag = string(bytes.TrimSpace(tag))
-		} else {
-			if bi, ok := debug.ReadBuildInfo(); ok {
-				setting := func(key string) string {
-					for _, bs := range bi.Settings {
-						if bs.Key == key {
-							return bs.Value
-						}
-					}
-					return ""
-				}
-				if rev := setting("vcs.revision"); rev != "" {
-					d.currentReleaseTag = rev
-					if modified := setting("vcs.modified"); modified == "true" {
-						d.currentReleaseTag += " (modified)"
-					}
-				}
-			}
-		}
-	}
 	if d.targets.blue == 0 {
 		d.targets.blue = 8000
 	}
@@ -309,12 +270,6 @@ func New(options ...Option) (*Deployer, error) {
 	}
 	if d.healthCheck.timeout == 0 {
 		d.healthCheck.timeout = time.Second * 30
-	}
-
-	// set next target
-	d.targets.next = d.targets.blue
-	if d.targets.current == d.targets.blue {
-		d.targets.next = d.targets.green
 	}
 
 	return &d, nil
@@ -354,6 +309,24 @@ func (d *Deployer) guessPortCurrent() (int, error) {
 		return port, nil
 	}
 	return 0, errors.Errorf("deploy: no active units for %s to guess current port", d.serviceName)
+}
+
+func (d *Deployer) releaseTag(target int) (string, error) {
+	tag, err := os.ReadFile(filepath.Join(d.path(target), "release"))
+	if err != nil {
+		return "", errors.WithMessage(err, "deploy: reading release tag")
+	}
+	return string(bytes.TrimSpace(tag)), nil
+}
+
+func (d *Deployer) otherPort(target int) int {
+	if d.targets.blue == target {
+		return d.targets.green
+	}
+	if d.targets.green == target {
+		return d.targets.blue
+	}
+	panic(fmt.Sprintf("deploy: not either blue or green: %d", target))
 }
 
 func (d *Deployer) systemctl(target int, op string) error {
@@ -535,11 +508,12 @@ func (d *Deployer) startTarget(target int) error {
 				`on port %d: %s`, target, err)
 	}
 
-	// make sure this build is used on restarts
+	// make sure this build is used on restarts, and other one is disabled
 	if err := d.systemctl(target, "enable"); err != nil {
 		return err
 	}
-	if err := d.systemctl(d.targets.current, "disable"); err != nil {
+	otherTarget := d.otherPort(target)
+	if err := d.systemctl(otherTarget, "disable"); err != nil {
 		return err
 	}
 
@@ -550,24 +524,28 @@ func (d *Deployer) sendShutdownSignal(target int) error {
 	return d.systemctl(target, "stop")
 }
 
-func (d *Deployer) deploy(releaseTag string) error {
+func (d *Deployer) deploy(releaseTag string) (session, error) {
 	d.deployLock.Lock()
 	defer d.deployLock.Unlock()
 
 	if releaseTag == "" {
-		return errors.New("deploy: tried to deploy empty release tag")
+		return session{}, errors.New("deploy: tried to deploy empty release tag")
 	}
-	if err := d.removeTarget(d.targets.next); err != nil {
-		return err
+	s, err := d.session(releaseTag)
+	if err != nil {
+		return s, err
 	}
-	if err := d.installTarget(d.targets.next, releaseTag); err != nil {
-		return err
+	if err := d.removeTarget(s.target.next); err != nil {
+		return s, err
 	}
-	if err := d.startTarget(d.targets.next); err != nil {
-		return err
+	if err := d.installTarget(s.target.next, s.tag.next); err != nil {
+		return s, err
+	}
+	if err := d.startTarget(s.target.next); err != nil {
+		return s, err
 	}
 	log.Printf("Started new release %s\n", releaseTag)
-	return nil
+	return s, nil
 }
 
 type compareResponse struct {
@@ -584,9 +562,9 @@ type compareResponse struct {
 var releaseEmailTemplate string
 var releaseEmail = template.Must(template.New("release_email").Parse(releaseEmailTemplate))
 
-func (d *Deployer) releaseEmail(releaseTag string) (string, error) {
+func (d *Deployer) releaseEmail(s session) (string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/compare/%s...%s",
-		d.github.account, d.github.repo, d.currentReleaseTag, releaseTag)
+		d.github.account, d.github.repo, s.tag.current, s.tag.next)
 	var result compareResponse
 	if err := d.githubGet(url, &result); err != nil {
 		return "", err
@@ -595,7 +573,7 @@ func (d *Deployer) releaseEmail(releaseTag string) (string, error) {
 		CurrentReleaseTag string
 		Compare           *compareResponse
 	}{
-		CurrentReleaseTag: d.currentReleaseTag,
+		CurrentReleaseTag: s.tag.current,
 		Compare:           &result,
 	}
 	var b strings.Builder
@@ -605,8 +583,23 @@ func (d *Deployer) releaseEmail(releaseTag string) (string, error) {
 	return b.String(), nil
 }
 
+func (d *Deployer) session(releaseTag string) (session, error) {
+	var err error
+	var s session
+	s.tag.next = releaseTag
+	if s.target.current, err = d.guessPortCurrent(); err != nil {
+		return s, err
+	}
+	if s.tag.current, err = d.releaseTag(s.target.current); err != nil {
+		return s, err
+	}
+	s.target.next = d.otherPort(s.target.current)
+	return s, nil
+}
+
 func (d *Deployer) deployAndEmail(releaseTag string) {
-	if err := d.deploy(releaseTag); err != nil {
+	s, err := d.deploy(releaseTag)
+	if err != nil {
 		m := mail.NewMessage()
 		m.SetAddressHeader("From", d.email.from, fmt.Sprintf("Deploy %s", d.serviceName))
 		m.SetAddressHeader("To", d.email.to, "")
@@ -623,7 +616,7 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 	m.SetAddressHeader("To", d.email.to, "")
 	m.SetHeader("Subject", fmt.Sprintf("Deployed %s", releaseTag))
 
-	if msg, err := d.releaseEmail(releaseTag); err != nil {
+	if msg, err := d.releaseEmail(s); err != nil {
 		msg = fmt.Sprintf(
 			"Deployed successfully, but error generating release email: %+v", err)
 		m.AddAlternative("text/plain", msg)
@@ -633,7 +626,7 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 	if err := d.email.client.DialAndSend(m); err != nil {
 		panic(err)
 	}
-	if err := d.sendShutdownSignal(d.targets.current); err != nil {
+	if err := d.sendShutdownSignal(s.target.current); err != nil {
 		panic(err)
 	}
 }
