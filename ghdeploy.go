@@ -287,7 +287,7 @@ func (d *Deployer) service(target int) string {
 	return fmt.Sprintf("%s@%d.service", d.serviceName, target)
 }
 
-func (d *Deployer) guessPortCurrent() (int, error) {
+func (d *Deployer) currentPort() (int, error) {
 	out, err := exec.Command("systemctl", "--user", "list-units", d.serviceName+"@*", "--output", "json").
 		CombinedOutput()
 	if err != nil {
@@ -307,7 +307,7 @@ func (d *Deployer) guessPortCurrent() (int, error) {
 		}
 		return port, nil
 	}
-	return 0, errors.Errorf("deploy: no active units for %s to guess current port", d.serviceName)
+	return 0, errors.Errorf("deploy: no active units for %s to determine current port", d.serviceName)
 }
 
 func (d *Deployer) releaseTag(target int) (string, error) {
@@ -586,7 +586,7 @@ func (d *Deployer) session(releaseTag string) (session, error) {
 	var err error
 	var s session
 	s.tag.next = releaseTag
-	if s.target.current, err = d.guessPortCurrent(); err != nil {
+	if s.target.current, err = d.currentPort(); err != nil {
 		return s, err
 	}
 	if s.tag.current, err = d.releaseTag(s.target.current); err != nil {
