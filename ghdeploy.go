@@ -25,7 +25,6 @@
 // • Configure your Github webook and the deployer with the hook secret.
 package ghdeploy
 
-// TODO: dont error on unknown webhooks
 // TODO: on failure collect log from startup attempt and include in email
 // TODO: include compare url in failure email
 // TODO: include github action build url in email
@@ -598,11 +597,12 @@ func (d *Deployer) session(releaseTag string) (session, error) {
 }
 
 func (d *Deployer) deployAndEmail(releaseTag string) {
+	m := mail.NewMessage()
+	m.SetAddressHeader("From", d.email.from, fmt.Sprintf("Deploy %s", d.serviceName))
+	m.SetAddressHeader("To", d.email.to, "")
+
 	s, err := d.deploy(releaseTag)
 	if err != nil {
-		m := mail.NewMessage()
-		m.SetAddressHeader("From", d.email.from, fmt.Sprintf("Deploy %s", d.serviceName))
-		m.SetAddressHeader("To", d.email.to, "")
 		m.SetHeader("Subject", fmt.Sprintf("Failed Deploy %s", releaseTag))
 		m.AddAlternative("text/plain", fmt.Sprintf("%+v\n", err))
 		if err := d.email.client.DialAndSend(m); err != nil {
@@ -611,9 +611,6 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 		return
 	}
 
-	m := mail.NewMessage()
-	m.SetAddressHeader("From", d.email.from, fmt.Sprintf("Deploy %s", d.serviceName))
-	m.SetAddressHeader("To", d.email.to, "")
 	m.SetHeader("Subject", fmt.Sprintf("Deployed %s", releaseTag))
 
 	if msg, err := d.releaseEmail(s); err != nil {
