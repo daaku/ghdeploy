@@ -25,6 +25,7 @@
 // • Configure your Github webook and the deployer with the hook secret.
 package ghdeploy
 
+// TODO: remove healthz requirement by default
 // TODO: on failure collect log from startup attempt and include in email
 // TODO: include compare url in failure email
 // TODO: include github action build url in email
@@ -98,7 +99,7 @@ type Deployer struct {
 // Option configures the Deployer.
 type Option func(*Deployer)
 
-// SysSystemdServiceName configures the base name of the unit. Defaults to
+// SystemdServiceName configures the base name of the unit. Defaults to
 // GithubRepoName. It is expected this will be a template unit. See package
 // documentation for more.
 func SystemdServiceName(name string) Option {
