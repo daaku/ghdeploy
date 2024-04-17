@@ -631,7 +631,7 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 	}
 }
 
-var ok = []byte("OK\n")
+var deployRequested = []byte("deploy: successfully requested\n")
 
 func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
 	hubSig := r.Header.Get("X-Hub-Signature")
@@ -695,12 +695,12 @@ func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go d.deployAndEmail(event.Release.TagName)
-	_, _ = w.Write(ok)
+	_, _ = w.Write(deployRequested)
 }
 
 func (d *Deployer) direct(w http.ResponseWriter, r *http.Request) {
 	go d.deployAndEmail(r.FormValue("release_tag"))
-	_, _ = w.Write(ok)
+	_, _ = w.Write(deployRequested)
 }
 
 func (d *Deployer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
