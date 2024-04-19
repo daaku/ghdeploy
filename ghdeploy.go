@@ -25,6 +25,7 @@
 // • Configure your Github webook and the deployer with the hook secret.
 package ghdeploy
 
+// TODO: switch to using sha256 signature
 // TODO: on failure collect log from startup attempt and include in email
 // TODO: include compare url in failure email
 // TODO: include github action build url in email
@@ -653,7 +654,7 @@ func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
 	}
 	if hubSig == "" && d.github.hookSecret != "" {
 		w.WriteHeader(http.StatusInternalServerError)
-		io.WriteString(w, "deploy: hook secret not configured not github")
+		io.WriteString(w, "deploy: hook secret not configured on github")
 		return
 	}
 
