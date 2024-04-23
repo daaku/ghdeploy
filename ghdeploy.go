@@ -35,10 +35,7 @@ package ghdeploy
 import (
 	"archive/tar"
 	"bytes"
-	"crypto/hmac"
-	"crypto/sha1"
 	_ "embed"
-	"encoding/hex"
 	"encoding/json"
 	perrors "errors"
 	"fmt"
@@ -58,6 +55,8 @@ import (
 
 	"github.com/go-mail/mail"
 	"github.com/pkg/errors"
+
+	"github.com/daaku/ghdeploy/ghook"
 )
 
 type session struct {
@@ -84,7 +83,7 @@ type Deployer struct {
 	}
 	github struct {
 		token      string
-		hookSecret string
+		hookSecret []byte
 		account    string
 		repo       string
 	}
@@ -166,7 +165,7 @@ func GithubToken(token string) Option {
 // will disable hook validation.
 func GithubHookSecret(secret string) Option {
 	return func(d *Deployer) {
-		d.github.hookSecret = secret
+		d.github.hookSecret = []byte(secret)
 	}
 }
 
@@ -646,60 +645,19 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 var deployRequested = []byte("deploy: successfully requested\n")
 
 func (d *Deployer) hook(w http.ResponseWriter, r *http.Request) {
-	hubSig := r.Header.Get("X-Hub-Signature")
-	if hubSig != "" && d.github.hookSecret == "" {
-		w.WriteHeader(http.StatusInternalServerError)
-		io.WriteString(w, "deploy: hook secret not configured in your code")
-		return
-	}
-	if hubSig == "" && d.github.hookSecret != "" {
-		w.WriteHeader(http.StatusInternalServerError)
-		io.WriteString(w, "deploy: hook secret not configured on github")
-		return
-	}
-
-	jb, err := io.ReadAll(r.Body)
-	if err != nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		io.WriteString(w, "deploy: error reading json payload")
-		return
-	}
-
-	if hubSig != "" {
-		const prefix = "sha1="
-		if !strings.HasPrefix(hubSig, prefix) {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "deploy: hook signature is not sha1: %v", err)
-			return
-		}
-		hubSig = hubSig[len(prefix):]
-
-		hubMac, err := hex.DecodeString(hubSig)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			fmt.Fprintf(w, "deploy: hook signature header is invalid hex: %v", err)
-			return
-		}
-
-		mac := hmac.New(sha1.New, []byte(d.github.hookSecret))
-		mac.Write(jb)
-		expectedMAC := mac.Sum(nil)
-		if !hmac.Equal(hubMac, expectedMAC) {
-			w.WriteHeader(http.StatusBadRequest)
-			io.WriteString(w, "deploy: hook signature mismatch")
-			return
-		}
-	}
-
 	var event struct {
 		Action  string `json:"action"`
 		Release struct {
 			TagName string `json:"tag_name"`
 		} `json:"release"`
 	}
-	if err := json.Unmarshal(jb, &event); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprintf(w, "deploy: invalid json: %v", err)
+	if err := ghook.Unmarshal(d.github.hookSecret, r, &event); err != nil {
+		status := http.StatusBadRequest
+		if err == ghook.ErrEmptySecret || err == ghook.ErrHookMisconfigured {
+			status = http.StatusInternalServerError
+		}
+		w.WriteHeader(status)
+		fmt.Fprintln(w, err)
 		return
 	}
 	if event.Action != "published" {
