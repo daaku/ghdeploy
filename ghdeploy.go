@@ -33,30 +33,27 @@ package ghdeploy
 // TODO: tests
 
 import (
-	"archive/tar"
 	"bytes"
-	_ "embed"
+	"context"
 	"encoding/json"
 	perrors "errors"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
-	"text/template"
 	"time"
 
 	"github.com/go-mail/mail"
 	"github.com/pkg/errors"
 
 	"github.com/daaku/ghdeploy/ghook"
+	"github.com/daaku/ghdeploy/grelease"
 )
 
 type session struct {
@@ -398,106 +395,15 @@ func (d *Deployer) removeTarget(target int) error {
 	return nil
 }
 
-func (d *Deployer) githubGet(url string, result interface{}) error {
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Token %s", d.github.token))
-	req.Header.Set("Accept", "application/vnd.github.v3.raw")
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer res.Body.Close()
-	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
-		return errors.WithStack(err)
-	}
-	return nil
-}
-
 func (d *Deployer) installTarget(target int, releaseTag string) error {
-	var release struct {
-		Assets []struct {
-			URL string `json:"url"`
-		} `json:"assets"`
+	i := grelease.Install{
+		Account:    d.github.account,
+		Repo:       d.github.repo,
+		Token:      d.github.token,
+		ReleaseTag: releaseTag,
+		Dest:       d.path(target),
 	}
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s",
-		d.github.account, d.github.repo, releaseTag)
-	retries := 3
-	for {
-		if err := d.githubGet(url, &release); err != nil {
-			return err
-		}
-		if len(release.Assets) != 0 {
-			break
-		}
-		if retries == 0 {
-			return errors.Errorf("deploy: no releases found for tag: %s", releaseTag)
-		}
-		retries--
-		time.Sleep(time.Second)
-	}
-
-	req, err := http.NewRequest("GET", release.Assets[0].URL, nil)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	req.Header.Set("Authorization", fmt.Sprintf("Token %s", d.github.token))
-	req.Header.Set("Accept", "application/octet-stream")
-
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return errors.WithStack(err)
-	}
-	defer res.Body.Close()
-
-	dir := d.path(target)
-	tarReader := tar.NewReader(res.Body)
-	for {
-		hd, err := tarReader.Next()
-		if err != nil {
-			if err == io.EOF {
-				break
-			}
-			return errors.WithStack(err)
-		}
-
-		fp := path.Join(dir, hd.Name)
-		mode := hd.FileInfo().Mode()
-		switch hd.Typeflag {
-		default:
-			return errors.Errorf(
-				"deploy: unsupported tar entry of type %v for file %q",
-				hd.Typeflag, hd.Name)
-		case tar.TypeDir:
-			if err := os.MkdirAll(fp, mode); err != nil {
-				return errors.WithStack(err)
-			}
-		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(fp), mode); err != nil {
-				return errors.WithStack(err)
-			}
-			file, err := os.Create(fp)
-			if err != nil {
-				return errors.WithStack(err)
-			}
-			if err := file.Chmod(mode); err != nil {
-				return errors.WithStack(err)
-			}
-			if _, err := io.Copy(file, tarReader); err != nil {
-				return errors.WithStack(err)
-			}
-			if err := file.Close(); err != nil {
-				return errors.WithStack(err)
-			}
-		}
-	}
-	if err := os.WriteFile(filepath.Join(dir, "release"), []byte(releaseTag), 0o655); err != nil {
-		return errors.WithStack(err)
-	}
-	return nil
+	return i.Run(context.Background())
 }
 
 func (d *Deployer) startTarget(target int) error {
@@ -561,41 +467,6 @@ func (d *Deployer) deploy(releaseTag string) (session, error) {
 	return s, nil
 }
 
-type compareResponse struct {
-	URL     string `json:"html_url"`
-	Commits []struct {
-		Commit struct {
-			Message string `json:"message"`
-		} `json:"commit"`
-		URL string `json:"html_url"`
-	} `json:"commits"`
-}
-
-//go:embed release_email.html
-var releaseEmailTemplate string
-var releaseEmail = template.Must(template.New("release_email").Parse(releaseEmailTemplate))
-
-func (d *Deployer) releaseEmail(s session) (string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/compare/%s...%s",
-		d.github.account, d.github.repo, s.tag.current, s.tag.next)
-	var result compareResponse
-	if err := d.githubGet(url, &result); err != nil {
-		return "", err
-	}
-	ctx := struct {
-		CurrentReleaseTag string
-		Compare           *compareResponse
-	}{
-		CurrentReleaseTag: s.tag.current,
-		Compare:           &result,
-	}
-	var b strings.Builder
-	if err := releaseEmail.Execute(&b, ctx); err != nil {
-		return "", errors.WithMessage(err, "deploy: in rendering release email")
-	}
-	return b.String(), nil
-}
-
 func (d *Deployer) session(releaseTag string) (session, error) {
 	var err error
 	var s session
@@ -627,7 +498,14 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 
 	m.SetHeader("Subject", fmt.Sprintf("Deployed %s", releaseTag))
 
-	if msg, err := d.releaseEmail(s); err != nil {
+	re := grelease.ReleaseEmail{
+		Account:    d.github.account,
+		Repo:       d.github.repo,
+		Token:      d.github.token,
+		CurrentTag: s.tag.current,
+		NextTag:    s.tag.next,
+	}
+	if msg, err := re.Generate(context.Background()); err != nil {
 		msg = fmt.Sprintf(
 			"Deployed successfully, but error generating release email: %+v", err)
 		m.AddAlternative("text/plain", msg)
