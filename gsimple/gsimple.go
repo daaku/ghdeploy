@@ -122,6 +122,6 @@ func (d *Deployer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "deploy: ignoring unexpected action: %v", event.Action)
 		return
 	}
-	go d.deployAndEmail(r.Context(), event.Release.TagName)
+	go d.deployAndEmail(context.Background(), event.Release.TagName)
 	_, _ = io.WriteString(w, "deploy: successfully requested\n")
 }
