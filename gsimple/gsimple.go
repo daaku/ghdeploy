@@ -70,15 +70,15 @@ func (d *Deployer) deployAndEmail(ctx context.Context, releaseTag string) {
 	m.SetAddressHeader("From", d.EmailFrom, fmt.Sprintf("Deploy %s", d.ServiceName))
 	m.SetAddressHeader("To", d.EmailTo, "")
 
+	currentRelease, currentReleaseErr := os.ReadFile(filepath.Join(d.InstallDir, "release"))
 	if err := d.deploy(ctx, releaseTag); err != nil {
 		m.SetHeader("Subject", fmt.Sprintf("Failed Deploy %s", releaseTag))
 		m.AddAlternative("text/plain", fmt.Sprintf("%+v\n", err))
 	} else {
 		m.SetHeader("Subject", fmt.Sprintf("Deployed %s", releaseTag))
-		currentRelease, err := os.ReadFile(filepath.Join(d.InstallDir, "release"))
-		if err != nil {
+		if currentReleaseErr != nil {
 			msg := fmt.Sprintf(
-				"Deployed successfully, but error retriving current release tag: %+v", err)
+				"Deployed successfully, but error retriving current release tag: %+v", currentReleaseErr)
 			m.AddAlternative("text/plain", msg)
 		} else {
 			re := grelease.ReleaseEmail{
