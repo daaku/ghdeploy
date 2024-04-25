@@ -56,8 +56,8 @@ func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
 		return err
 	}
 
-	// retart service
-	out, err := exec.Command("systemctl", "--user", "restart", d.ServiceName).
+	// stop service, socket will start it for us
+	out, err := exec.Command("systemctl", "--user", "stop", d.ServiceName).
 		CombinedOutput()
 	if err != nil {
 		return errors.Errorf("deploy: %s: %s", err, out)
