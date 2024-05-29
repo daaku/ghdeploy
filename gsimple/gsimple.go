@@ -19,7 +19,7 @@ import (
 type ServiceOp int
 
 const (
-	ServiceOpStop = iota
+	ServiceOpStop ServiceOp = iota
 	ServiceOpRestart
 )
 
