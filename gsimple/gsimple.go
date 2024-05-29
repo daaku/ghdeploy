@@ -16,8 +16,16 @@ import (
 	"gopkg.in/mail.v2"
 )
 
+type ServiceOp int
+
+const (
+	ServiceOpStop = iota
+	ServiceOpRestart
+)
+
 type Deployer struct {
 	ServiceName      string
+	ServiceOp        ServiceOp
 	InstallDir       string
 	GithubToken      string
 	GithubHookSecret []byte
@@ -56,8 +64,11 @@ func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
 		return err
 	}
 
-	// stop service, socket will start it for us
-	out, err := exec.Command("systemctl", "--user", "stop", d.ServiceName).
+	op := map[ServiceOp]string{
+		ServiceOpRestart: "restart",
+		ServiceOpStop:    "stop",
+	}[d.ServiceOp]
+	out, err := exec.Command("systemctl", "--user", op, d.ServiceName).
 		CombinedOutput()
 	if err != nil {
 		return errors.Errorf("deploy: %s: %s", err, out)
