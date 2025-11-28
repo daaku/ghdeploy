@@ -67,7 +67,7 @@ func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
 
 	// ServiceOpNone are assumed to be static files and should be readable
 	if d.ServiceOp == ServiceOpNone {
-		if err := os.Chmod(d.InstallDir, 0o644); err != nil {
+		if err := os.Chmod(d.InstallDir, 0o755); err != nil {
 			return err
 		}
 	} else {
