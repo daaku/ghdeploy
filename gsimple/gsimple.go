@@ -65,7 +65,12 @@ func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
 		return err
 	}
 
-	if d.ServiceOp != ServiceOpNone {
+	// ServiceOpNone are assumed to be static files and should be readable
+	if d.ServiceOp == ServiceOpNone {
+		if err := os.Chmod(d.InstallDir, 0o644); err != nil {
+			return err
+		}
+	} else {
 		op := map[ServiceOp]string{
 			ServiceOpRestart: "restart",
 			ServiceOpStop:    "stop",
