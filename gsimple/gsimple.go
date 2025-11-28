@@ -21,6 +21,7 @@ type ServiceOp int
 const (
 	ServiceOpStop ServiceOp = iota
 	ServiceOpRestart
+	ServiceOpNone
 )
 
 type Deployer struct {
@@ -64,14 +65,16 @@ func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
 		return err
 	}
 
-	op := map[ServiceOp]string{
-		ServiceOpRestart: "restart",
-		ServiceOpStop:    "stop",
-	}[d.ServiceOp]
-	out, err := exec.Command("systemctl", "--user", op, d.ServiceName).
-		CombinedOutput()
-	if err != nil {
-		return errors.Errorf("deploy: %s: %s", err, out)
+	if d.ServiceOp != ServiceOpNone {
+		op := map[ServiceOp]string{
+			ServiceOpRestart: "restart",
+			ServiceOpStop:    "stop",
+		}[d.ServiceOp]
+		out, err := exec.Command("systemctl", "--user", op, d.ServiceName).
+			CombinedOutput()
+		if err != nil {
+			return errors.Errorf("deploy: %s: %s", err, out)
+		}
 	}
 	return nil
 }
