@@ -1,6 +1,7 @@
 package gsimple
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -65,19 +66,26 @@ func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
 		return err
 	}
 
-	// ServiceOpNone are assumed to be static files and should be readable
-	if d.ServiceOp == ServiceOpNone {
+	switch d.ServiceOp {
+	default:
+		return errors.Errorf("deploy: unexpected service op: %v", d.ServiceOp)
+	case ServiceOpNone: // assumed to be static files and should be readable
 		if err := os.Chmod(d.InstallDir, 0o755); err != nil {
 			return err
 		}
-	} else {
-		op := map[ServiceOp]string{
-			ServiceOpRestart: "restart",
-			ServiceOpStop:    "stop",
-		}[d.ServiceOp]
-		out, err := exec.Command("systemctl", "--user", op, d.ServiceName).
+	case ServiceOpRestart:
+		out, err := exec.Command("systemctl", "--user", "restart", d.ServiceName).
 			CombinedOutput()
 		if err != nil {
+			return errors.Errorf("deploy: %s: %s", err, out)
+		}
+	case ServiceOpStop:
+		out, err := exec.Command("systemctl", "--user", "stop", d.ServiceName).
+			CombinedOutput()
+		if err != nil {
+			if bytes.HasSuffix(bytes.TrimSpace(out), []byte("not loaded.")) {
+				return nil
+			}
 			return errors.Errorf("deploy: %s: %s", err, out)
 		}
 	}
