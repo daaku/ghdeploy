@@ -39,7 +39,8 @@ type Deployer struct {
 	deployLock       sync.Mutex
 }
 
-func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
+// Deploy specified release tag
+func (d *Deployer) Deploy(ctx context.Context, releaseTag string) error {
 	// install new release
 	tmpDest, err := os.MkdirTemp(filepath.Dir(d.InstallDir), filepath.Base(d.InstallDir))
 	if err != nil {
@@ -92,13 +93,15 @@ func (d *Deployer) deploy(ctx context.Context, releaseTag string) error {
 	return nil
 }
 
-func (d *Deployer) deployAndEmail(ctx context.Context, releaseTag string) {
+// DeployAndEmail deploy's the specified releaseTag and sends an email with the
+// success or failure information.
+func (d *Deployer) DeployAndEmail(ctx context.Context, releaseTag string) {
 	m := mail.NewMessage()
 	m.SetAddressHeader("From", d.EmailFrom, fmt.Sprintf("Deploy %s", d.ServiceName))
 	m.SetAddressHeader("To", d.EmailTo, "")
 
 	currentRelease, currentReleaseErr := os.ReadFile(filepath.Join(d.InstallDir, "release"))
-	if err := d.deploy(ctx, releaseTag); err != nil {
+	if err := d.Deploy(ctx, releaseTag); err != nil {
 		m.SetHeader("Subject", fmt.Sprintf("Failed Deploy %s", releaseTag))
 		m.AddAlternative("text/plain", fmt.Sprintf("%+v\n", err))
 	} else {
@@ -149,6 +152,6 @@ func (d *Deployer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "deploy: ignoring unexpected action: %v", event.Action)
 		return
 	}
-	go d.deployAndEmail(context.Background(), event.Release.TagName)
+	go d.DeployAndEmail(context.Background(), event.Release.TagName)
 	_, _ = io.WriteString(w, "deploy: successfully requested\n")
 }
