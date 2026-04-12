@@ -56,6 +56,14 @@ import (
 	"github.com/daaku/ghdeploy/grelease"
 )
 
+var hostInfo, _ = os.Hostname()
+
+func init() {
+	if hostInfo == "" {
+		hostInfo = fmt.Sprintf(" on %s", hostInfo)
+	}
+}
+
 type session struct {
 	target struct {
 		current, next int
@@ -488,7 +496,7 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 
 	s, err := d.deploy(releaseTag)
 	if err != nil {
-		m.SetHeader("Subject", fmt.Sprintf("Failed Deploy %s", releaseTag))
+		m.SetHeader("Subject", fmt.Sprintf("Failed Deploy %s%s", releaseTag, hostInfo))
 		m.AddAlternative("text/plain", fmt.Sprintf("%+v\n", err))
 		if err := d.email.client.DialAndSend(m); err != nil {
 			panic(err)
@@ -496,7 +504,7 @@ func (d *Deployer) deployAndEmail(releaseTag string) {
 		return
 	}
 
-	m.SetHeader("Subject", fmt.Sprintf("Deployed %s", releaseTag))
+	m.SetHeader("Subject", fmt.Sprintf("Deployed %s%s", releaseTag, hostInfo))
 
 	re := grelease.ReleaseEmail{
 		Account:    d.github.account,
