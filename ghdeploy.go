@@ -59,7 +59,7 @@ import (
 var hostInfo, _ = os.Hostname()
 
 func init() {
-	if hostInfo == "" {
+	if hostInfo != "" {
 		hostInfo = fmt.Sprintf(" on %s", hostInfo)
 	}
 }
