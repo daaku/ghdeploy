@@ -41,6 +41,14 @@ type Deployer struct {
 
 // Deploy specified release tag
 func (d *Deployer) Deploy(ctx context.Context, releaseTag string) error {
+	if releaseTag == "" {
+		var err error
+		releaseTag, err = grelease.LatestReleaseTag(ctx, nil, d.GithubToken, d.GithubAccount, d.GithubRepo)
+		if err != nil {
+			return err
+		}
+	}
+
 	// install new release
 	tmpDest, err := os.MkdirTemp(filepath.Dir(d.InstallDir), filepath.Base(d.InstallDir))
 	if err != nil {

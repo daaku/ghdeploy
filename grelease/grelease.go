@@ -50,6 +50,25 @@ func get(
 	return nil
 }
 
+// LatestReleaseTag fetches the latest release tag from the GitHub API for the
+// given account and repo.
+func LatestReleaseTag(
+	ctx context.Context,
+	transport http.RoundTripper,
+	token string,
+	account string,
+	repo string,
+) (string, error) {
+	var latest struct {
+		TagName string `json:"tag_name"`
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/latest", account, repo)
+	if err := get(ctx, transport, token, url, &latest); err != nil {
+		return "", err
+	}
+	return latest.TagName, nil
+}
+
 type Install struct {
 	Transport  http.RoundTripper
 	Account    string
